@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { createClient, createAdminClient } from "@/lib/supabaseServer";
 
 async function requireAdmin(supabase) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -16,7 +16,8 @@ export async function POST(req) {
   const { lessonId } = await req.json();
   if (!lessonId) return NextResponse.json({ error: "lessonId required" }, { status: 400 });
 
-  const { error } = await supabase.from("lessons").delete().eq("id", lessonId);
+  const adminClient = createAdminClient();
+  const { error } = await adminClient.from("lessons").delete().eq("id", lessonId);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
