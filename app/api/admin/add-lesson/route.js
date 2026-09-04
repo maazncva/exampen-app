@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { createClient, createAdminClient } from "@/lib/supabaseServer";
 
 async function requireAdmin(supabase) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -18,12 +18,14 @@ export async function POST(req) {
     return NextResponse.json({ error: "courseId, bunnyVideoId and title are required" }, { status: 400 });
   }
 
-  const { count } = await supabase
+  const adminClient = createAdminClient();
+
+  const { count } = await adminClient
     .from("lessons")
     .select("id", { count: "exact", head: true })
     .eq("course_id", courseId);
 
-  const { data: lesson, error } = await supabase
+  const { data: lesson, error } = await adminClient
     .from("lessons")
     .insert({ course_id: courseId, bunny_video_id: bunnyVideoId, title, position: count || 0 })
     .select()
