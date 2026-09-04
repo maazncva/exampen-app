@@ -9,13 +9,20 @@ export default async function AdminPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const { data: profile, error: profileError } = await supabase.from("profiles").select("*").eq("id", user.id).single();
   if (profile?.role !== "admin") {
     return (
       <div className="container">
         <h1>Not authorized</h1>
         <p>This account doesn't have admin access.</p>
         <a href="/" className="btn">Back to courses</a>
+        <pre style={{ marginTop: 24, padding: 16, background: "#171a21", borderRadius: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>
+          DEBUG INFO (temporary):
+          {"\n"}auth user id: {user.id}
+          {"\n"}auth user email: {user.email}
+          {"\n"}profile fetched: {JSON.stringify(profile, null, 2)}
+          {"\n"}profile query error: {JSON.stringify(profileError, null, 2)}
+        </pre>
       </div>
     );
   }
