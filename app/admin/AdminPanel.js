@@ -1,19 +1,22 @@
 "use client";
 import { useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
+import UserDetailModal from "./UserDetailModal";
 
-export default function AdminPanel({ initialUsers, initialCourses, initialEnrollments, initialLessons }) {
+export default function AdminPanel({ initialUsers, initialCourses, initialEnrollments, initialLessons, initialDeviceSessions }) {
   const [tab, setTab] = useState("courses");
   const [users, setUsers] = useState(initialUsers);
   const [courses, setCourses] = useState(initialCourses);
   const [enrollments, setEnrollments] = useState(initialEnrollments);
   const [lessons, setLessons] = useState(initialLessons);
+  const [deviceSessions, setDeviceSessions] = useState(initialDeviceSessions || []);
   const [bunnyVideos, setBunnyVideos] = useState(null); // null = not loaded yet
   const [bunnyLoading, setBunnyLoading] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [thumbPreview, setThumbPreview] = useState(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   function flash(setter, text) {
     setter(text);
@@ -33,7 +36,7 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
     const res = await fetch("/api/admin/create-user", { method: "POST", body: JSON.stringify(body) });
     const json = await res.json();
     if (!res.ok) return flash(setErr, json.error || "Failed to create user");
-    setUsers([json.profile, ...users]);
+    setUsers([{ ...json.profile, active: true }, ...users]);
     if (json.enrollments?.length) setEnrollments([...enrollments, ...json.enrollments]);
     e.target.reset();
     if (json.enrollError) {
@@ -102,6 +105,61 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
       setEnrollments([...enrollments, json.enrollment]);
     }
   }
+
+  // ---- User detail modal actions ----
+  async function saveUserDetails(userId, { full_name, phone }) {
+    const res = await fetch("/api/admin/update-user", {
+      method: "POST",
+      body: JSON.stringify({ userId, full_name, phone })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to save changes");
+    setUsers(users.map((u) => (u.id === userId ? { ...u, ...json.profile } : u)));
+    flash(setMsg, "Candidate details updated");
+  }
+
+  async function toggleUserStatus(userId, active) {
+    const res = await fetch("/api/admin/set-user-status", {
+      method: "POST",
+      body: JSON.stringify({ userId, active })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to update status");
+    setUsers(users.map((u) => (u.id === userId ? { ...u, active } : u)));
+    flash(setMsg, active ? "Account reactivated" : "Account deactivated");
+  }
+
+  async function removeUserCourse(userId, courseId) {
+    await toggleAssign(userId, courseId, true);
+  }
+
+  async function deleteUser(userId) {
+    const res = await fetch("/api/admin/delete-user", {
+      method: "POST",
+      body: JSON.stringify({ userId })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to delete user");
+    setUsers(users.filter((u) => u.id !== userId));
+    setEnrollments(enrollments.filter((e) => e.user_id !== userId));
+    setSelectedUserId(null);
+    flash(setMsg, "Candidate deleted");
+  }
+
+  async function revokeDevice(deviceSessionId) {
+    const res = await fetch("/api/admin/revoke-device", {
+      method: "POST",
+      body: JSON.stringify({ deviceSessionId })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to revoke device");
+    setDeviceSessions(
+      deviceSessions.map((d) => (d.id === deviceSessionId ? { ...d, trusted: false, is_current_session: false } : d))
+    );
+    flash(setMsg, "Device marked untrusted — they'll need a new code next login");
+  }
+
+  const selectedUser = users.find((u) => u.id === selectedUserId) || null;
 
   // ---- Bunny library ----
   async function loadBunnyVideos() {
@@ -268,10 +326,24 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
             </form>
           </div>
           <table>
-            <thead><tr><th>Email</th><th>Name</th><th>Role</th></tr></thead>
+            <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Courses</th></tr></thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id}><td>{u.email}</td><td>{u.full_name || "—"}</td><td>{u.role}</td></tr>
+                <tr key={u.id} className="clickable-row" onClick={() => u.role !== "admin" && setSelectedUserId(u.id)}>
+                  <td>{u.email}</td>
+                  <td>{u.full_name || "—"}</td>
+                  <td>{u.role}</td>
+                  <td>
+                    {u.role === "admin" ? (
+                      "—"
+                    ) : (
+                      <span className={`status-badge ${u.active ? "active" : "inactive"}`}>
+                        {u.active ? "Active" : "Inactive"}
+                      </span>
+                    )}
+                  </td>
+                  <td>{u.role === "admin" ? "—" : enrollments.filter((e) => e.user_id === u.id).length}</td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -310,6 +382,21 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
             </tbody>
           </table>
         </div>
+      )}
+
+      {selectedUser && (
+        <UserDetailModal
+          user={selectedUser}
+          courses={courses}
+          enrollments={enrollments}
+          devices={deviceSessions.filter((d) => d.user_id === selectedUser.id)}
+          onClose={() => setSelectedUserId(null)}
+          onSaveDetails={saveUserDetails}
+          onToggleStatus={toggleUserStatus}
+          onRemoveCourse={removeUserCourse}
+          onDelete={deleteUser}
+          onRevokeDevice={revokeDevice}
+        />
       )}
     </div>
   );
