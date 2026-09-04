@@ -46,3 +46,19 @@ th, td { text-align: left; padding: 10px; border-bottom: 1px solid #23262f; font
 .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
 .tabs button { background: #23262f; }
 .tabs button.active { background: #4f7cff; }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+}
+.modal-panel {
+  background: #171a21; border: 1px solid #23262f; border-radius: 14px;
+  width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto; padding: 24px;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.modal-close { background: #23262f; border: none; color: #eaeaea; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+.status-badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; display: inline-block; }
+.status-badge.active { background: #16351f; color: #6bffa0; }
+.status-badge.inactive { background: #3a1f1f; color: #ff9b9b; }
+.enrolled-course-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #23262f; font-size: 14px; }
+.clickable-row { cursor: pointer; }
+.clickable-row:hover { background: #171a21; }
