@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
+import { createClient, createAdminClient } from "@/lib/supabaseServer";
 
 async function requireAdmin(supabase) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -18,7 +18,8 @@ export async function POST(req) {
     return NextResponse.json({ error: "Title and thumbnail are required" }, { status: 400 });
   }
 
-  const { data: course, error } = await supabase
+  const adminClient = createAdminClient();
+  const { data: course, error } = await adminClient
     .from("courses")
     .insert({ title, description, thumbnail_url })
     .select()
