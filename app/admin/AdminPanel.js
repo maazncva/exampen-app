@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import UserDetailModal from "./UserDetailModal";
+import CourseDetailModal from "./CourseDetailModal";
 
 export default function AdminPanel({ initialUsers, initialCourses, initialEnrollments, initialLessons, initialDeviceSessions }) {
   const [tab, setTab] = useState("courses");
@@ -17,6 +18,7 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedCourseId, setSelectedCourseId] = useState(null);
 
   function flash(setter, text) {
     setter(text);
@@ -176,13 +178,33 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
     if (!courseId) return;
     const res = await fetch("/api/admin/add-lesson", {
       method: "POST",
-      body: JSON.stringify({ courseId, bunnyVideoId: video.id, title: video.title })
+      body: JSON.stringify({ courseId, bunnyVideoId: video.id, title: video.title, thumbnailUrl: video.thumbnailUrl })
     });
     const json = await res.json();
     if (!res.ok) return flash(setErr, json.error || "Failed to attach video");
     setLessons([...lessons, json.lesson]);
     flash(setMsg, `"${video.title}" attached to course`);
   }
+
+  async function detachVideo(video, courseId, courseTitle) {
+    const lesson = lessons.find((l) => l.course_id === courseId && l.bunny_video_id === video.id);
+    if (!lesson) return;
+    if (!confirm(`Remove "${video.title}" from "${courseTitle}"?`)) return;
+    await removeLesson(lesson.id);
+  }
+
+  async function deleteCourse(courseId) {
+    const res = await fetch("/api/admin/delete-course", { method: "POST", body: JSON.stringify({ courseId }) });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to delete course");
+    setCourses(courses.filter((c) => c.id !== courseId));
+    setLessons(lessons.filter((l) => l.course_id !== courseId));
+    setEnrollments(enrollments.filter((e) => e.course_id !== courseId));
+    setSelectedCourseId(null);
+    flash(setMsg, "Course deleted");
+  }
+
+  const selectedCourse = courses.find((c) => c.id === selectedCourseId) || null;
 
   async function removeLesson(lessonId) {
     const res = await fetch("/api/admin/remove-lesson", { method: "POST", body: JSON.stringify({ lessonId }) });
@@ -227,30 +249,22 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
           </div>
 
           <h3 style={{ marginTop: 32 }}>Your courses</h3>
-          {courses.map((c) => (
-            <div key={c.id} className="card" style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <strong>{c.title}</strong>
-                <span className="tag">{lessonsFor(c.id).length} lesson(s)</span>
+          <p style={{ color: "#999", fontSize: 13 }}>Click a course to manage its lessons.</p>
+          <div className="grid">
+            {courses.map((c) => (
+              <div key={c.id} className="course-card clickable-row" onClick={() => setSelectedCourseId(c.id)}>
+                <div className="course-thumb-wrap">
+                  {c.thumbnail_url ? (
+                    <img src={c.thumbnail_url} alt={c.title} />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", background: "#222" }} />
+                  )}
+                </div>
+                <div className="course-title">{c.title}</div>
+                <div className="tag">{lessonsFor(c.id).length} lesson(s)</div>
               </div>
-              {lessonsFor(c.id).length === 0 ? (
-                <p style={{ color: "#888", fontSize: 13 }}>No videos attached yet — go to the Bunny Library tab.</p>
-              ) : (
-                <table>
-                  <tbody>
-                    {lessonsFor(c.id).map((l) => (
-                      <tr key={l.id}>
-                        <td>{l.title}</td>
-                        <td style={{ textAlign: "right" }}>
-                          <button className="btn-danger" onClick={() => removeLesson(l.id)}>Remove</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
@@ -263,7 +277,8 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
             </button>
           </div>
           <p style={{ color: "#999", fontSize: 13 }}>
-            Upload videos in your Bunny dashboard as usual — they'll show up here automatically. Pick which course each one belongs to.
+            Upload videos in your Bunny dashboard as usual — they'll show up here automatically. Click any course
+            below a video to add or remove it there — one video can belong to as many courses as you like.
           </p>
 
           {bunnyVideos === null && !bunnyLoading && <p>Loading...</p>}
@@ -278,17 +293,26 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
                 <div className="course-title">{v.title}</div>
                 <div style={{ padding: "0 14px 14px" }}>
                   {v.status !== 4 && <div className="tag" style={{ marginBottom: 8 }}>Still processing...</div>}
-                  <select id={`select-${v.id}`} defaultValue="">
-                    <option value="" disabled>Attach to course...</option>
-                    {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-                  </select>
-                  <button
-                    style={{ width: "100%" }}
-                    onClick={() => attachVideo(v, document.getElementById(`select-${v.id}`).value)}
-                    disabled={v.status !== 4}
-                  >
-                    Attach
-                  </button>
+                  {courses.length === 0 ? (
+                    <p style={{ color: "#888", fontSize: 12 }}>Create a course first.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {courses.map((c) => {
+                        const attached = lessons.some((l) => l.course_id === c.id && l.bunny_video_id === v.id);
+                        return (
+                          <button
+                            key={c.id}
+                            className={attached ? "" : "btn-secondary"}
+                            style={{ fontSize: 12, padding: "6px 10px" }}
+                            disabled={v.status !== 4}
+                            onClick={() => (attached ? detachVideo(v, c.id, c.title) : attachVideo(v, c.id))}
+                          >
+                            {attached ? "✓ " : ""}{c.title}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -382,6 +406,20 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
             </tbody>
           </table>
         </div>
+      )}
+
+      {selectedCourse && (
+        <CourseDetailModal
+          course={selectedCourse}
+          lessons={lessonsFor(selectedCourse.id)}
+          bunnyVideos={bunnyVideos}
+          bunnyLoading={bunnyLoading}
+          onLoadBunnyVideos={loadBunnyVideos}
+          onClose={() => setSelectedCourseId(null)}
+          onAddLesson={attachVideo}
+          onRemoveLesson={removeLesson}
+          onDeleteCourse={deleteCourse}
+        />
       )}
 
       {selectedUser && (
