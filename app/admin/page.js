@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabaseServer";
+import { createClient, createAdminClient } from "@/lib/supabaseServer";
+import { requireApprovedDevice } from "@/lib/deviceGuard";
 import AdminPanel from "./AdminPanel";
 
 export const dynamic = "force-dynamic";
@@ -8,21 +9,15 @@ export default async function AdminPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  await requireApprovedDevice(supabase, user.id);
 
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
   if (profile?.role !== "admin") {
     return (
       <div className="container">
         <h1>Not authorized</h1>
         <p>This account doesn't have admin access.</p>
         <a href="/" className="btn">Back to courses</a>
-        <pre style={{ marginTop: 24, padding: 16, background: "#171a21", borderRadius: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>
-          DEBUG INFO (temporary):
-          {"\n"}auth user id: {user.id}
-          {"\n"}auth user email: {user.email}
-          {"\n"}profile fetched: {JSON.stringify(profile, null, 2)}
-          {"\n"}profile query error: {JSON.stringify(profileError, null, 2)}
-        </pre>
       </div>
     );
   }
@@ -31,6 +26,20 @@ export default async function AdminPage() {
   const { data: courses } = await supabase.from("courses").select("*").order("created_at", { ascending: false });
   const { data: enrollments } = await supabase.from("enrollments").select("*");
   const { data: lessons } = await supabase.from("lessons").select("*").order("position", { ascending: true });
+  const { data: deviceSessions } = await supabase
+    .from("device_sessions")
+    .select("*")
+    .order("last_seen_at", { ascending: false });
+
+  // Merge in each user's active/banned status (lives on the auth user, not the profile row).
+  const adminClient = createAdminClient();
+  const { data: authList } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+  const bannedIds = new Set(
+    (authList?.users || [])
+      .filter((u) => u.banned_until && new Date(u.banned_until) > new Date())
+      .map((u) => u.id)
+  );
+  const usersWithStatus = (users || []).map((u) => ({ ...u, active: !bannedIds.has(u.id) }));
 
   return (
     <div>
@@ -42,10 +51,11 @@ export default async function AdminPage() {
       </div>
       <div className="container">
         <AdminPanel
-          initialUsers={users || []}
+          initialUsers={usersWithStatus}
           initialCourses={courses || []}
           initialEnrollments={enrollments || []}
           initialLessons={lessons || []}
+          initialDeviceSessions={deviceSessions || []}
         />
       </div>
     </div>
