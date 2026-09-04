@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabaseServer";
+import { requireApprovedDevice } from "@/lib/deviceGuard";
 import LessonPlayer from "./LessonPlayer";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ export default async function CoursePage({ params }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  await requireApprovedDevice(supabase, user.id);
 
   const { data: course } = await supabase.from("courses").select("*").eq("id", params.id).single();
   if (!course) notFound();
