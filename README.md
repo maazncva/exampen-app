@@ -67,3 +67,6 @@ Stack: Next.js + Supabase (auth + database) + Bunny Stream (video). Hosted on Ve
 ## Security notes
 - The video URL is generated with a 2-hour expiring signed token, produced server-side, only after checking the `enrollments` table — so even a technical user inspecting the page can't get a working link to a course they're not enrolled in, and any link they do see expires quickly.
 - The `service_role` Supabase key must only ever live in Vercel's environment variables, never in the browser bundle — this project is already structured so it's only used inside `/api/admin/*` server routes.
+
+
+
