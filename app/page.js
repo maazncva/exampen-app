@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabaseServer";
+import { requireApprovedDevice } from "@/lib/deviceGuard";
 import LogoutButton from "./LogoutButton";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,7 @@ export default async function DashboardPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  await requireApprovedDevice(supabase, user.id);
 
   const { data: profile } = await supabase
     .from("profiles")
