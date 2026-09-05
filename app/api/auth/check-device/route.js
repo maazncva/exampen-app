@@ -58,6 +58,18 @@ export async function POST(req) {
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  // Invalidate any earlier unverified code for this device first, so there's
+  // only ever one valid code at a time -- avoids the confusing case where an
+  // admin reads an older email instead of the latest "resend" and the code
+  // silently doesn't match.
+  await adminClient
+    .from("login_otps")
+    .update({ verified: true })
+    .eq("user_id", user.id)
+    .eq("device_id", deviceId)
+    .eq("verified", false);
+
   await adminClient.from("login_otps").insert({ user_id: user.id, device_id: deviceId, code, expires_at });
 
   try {
