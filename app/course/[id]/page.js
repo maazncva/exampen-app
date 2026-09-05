@@ -11,16 +11,14 @@ export default async function CoursePage({ params }) {
   if (!user) redirect("/login");
   await requireApprovedDevice(supabase, user.id);
 
-  const { data: course } = await supabase.from("courses").select("*").eq("id", params.id).single();
-  if (!course) notFound();
+  // Course lookup and the enrollment check don't depend on each other --
+  // run them together.
+  const [{ data: course }, { data: enrollment }] = await Promise.all([
+    supabase.from("courses").select("*").eq("id", params.id).single(),
+    supabase.from("enrollments").select("id").eq("user_id", user.id).eq("course_id", params.id).maybeSingle()
+  ]);
 
-  // Server-side gate: only proceed if this user is actually enrolled in this course.
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("course_id", params.id)
-    .maybeSingle();
+  if (!course) notFound();
 
   if (!enrollment) {
     return (
