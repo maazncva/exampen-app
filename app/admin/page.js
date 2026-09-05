@@ -22,18 +22,28 @@ export default async function AdminPage() {
     );
   }
 
-  const { data: users } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
-  const { data: courses } = await supabase.from("courses").select("*").order("created_at", { ascending: false });
-  const { data: enrollments } = await supabase.from("enrollments").select("*");
-  const { data: lessons } = await supabase.from("lessons").select("*").order("position", { ascending: true });
-  const { data: deviceSessions } = await supabase
-    .from("device_sessions")
-    .select("*")
-    .order("last_seen_at", { ascending: false });
+  const adminClient = createAdminClient();
+
+  // None of these six depend on each other, so run them all at once instead
+  // of one after another -- this is the single biggest speed win available
+  // on this page.
+  const [
+    { data: users },
+    { data: courses },
+    { data: enrollments },
+    { data: lessons },
+    { data: deviceSessions },
+    { data: authList }
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+    supabase.from("courses").select("*").order("created_at", { ascending: false }),
+    supabase.from("enrollments").select("*"),
+    supabase.from("lessons").select("*").order("position", { ascending: true }),
+    supabase.from("device_sessions").select("*").order("last_seen_at", { ascending: false }),
+    adminClient.auth.admin.listUsers({ perPage: 1000 })
+  ]);
 
   // Merge in each user's active/banned status (lives on the auth user, not the profile row).
-  const adminClient = createAdminClient();
-  const { data: authList } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
   const bannedIds = new Set(
     (authList?.users || [])
       .filter((u) => u.banned_until && new Date(u.banned_until) > new Date())
