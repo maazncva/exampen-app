@@ -3,22 +3,35 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import UserDetailModal from "./UserDetailModal";
 import CourseDetailModal from "./CourseDetailModal";
+import DocumentAccessModal from "./DocumentAccessModal";
 
-export default function AdminPanel({ initialUsers, initialCourses, initialEnrollments, initialLessons, initialDeviceSessions }) {
+export default function AdminPanel({
+  initialUsers,
+  initialCourses,
+  initialEnrollments,
+  initialLessons,
+  initialDeviceSessions,
+  initialDocuments,
+  initialDocumentAccess
+}) {
   const [tab, setTab] = useState("courses");
   const [users, setUsers] = useState(initialUsers);
   const [courses, setCourses] = useState(initialCourses);
   const [enrollments, setEnrollments] = useState(initialEnrollments);
   const [lessons, setLessons] = useState(initialLessons);
   const [deviceSessions, setDeviceSessions] = useState(initialDeviceSessions || []);
+  const [documents, setDocuments] = useState(initialDocuments || []);
+  const [documentAccess, setDocumentAccess] = useState(initialDocumentAccess || []);
   const [bunnyVideos, setBunnyVideos] = useState(null); // null = not loaded yet
   const [bunnyLoading, setBunnyLoading] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [thumbPreview, setThumbPreview] = useState(null);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState(null);
 
   function flash(setter, text) {
     setter(text);
@@ -213,6 +226,69 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
     setLessons(lessons.filter((l) => l.id !== lessonId));
   }
 
+  // ---- Documents ----
+  async function uploadDocument(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const file = fd.get("document_file");
+    const title = fd.get("title");
+    if (!file || file.size === 0) return flash(setErr, "Please choose a PDF file");
+
+    setUploadingDocument(true);
+    setErr("");
+
+    const supabase = createClient();
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "")}`;
+    const { error: uploadError } = await supabase.storage.from("documents").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false
+    });
+
+    if (uploadError) {
+      setUploadingDocument(false);
+      return flash(setErr, "Upload failed: " + uploadError.message);
+    }
+
+    const res = await fetch("/api/admin/create-document", {
+      method: "POST",
+      body: JSON.stringify({ title, storagePath: path })
+    });
+    const json = await res.json();
+    setUploadingDocument(false);
+    if (!res.ok) return flash(setErr, json.error || "Failed to save document");
+
+    setDocuments([json.document, ...documents]);
+    e.target.reset();
+    flash(setMsg, "Document uploaded — grant access to students from here");
+  }
+
+  async function toggleDocumentAccess(documentId, userId, currentlyGranted) {
+    const res = await fetch("/api/admin/toggle-document-access", {
+      method: "POST",
+      body: JSON.stringify({ documentId, userId, action: currentlyGranted ? "remove" : "add" })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to update access");
+    if (currentlyGranted) {
+      setDocumentAccess(documentAccess.filter((a) => !(a.document_id === documentId && a.user_id === userId)));
+    } else {
+      setDocumentAccess([...documentAccess, json.access]);
+    }
+  }
+
+  async function deleteDocument(documentId) {
+    const res = await fetch("/api/admin/delete-document", { method: "POST", body: JSON.stringify({ documentId }) });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to delete document");
+    setDocuments(documents.filter((d) => d.id !== documentId));
+    setDocumentAccess(documentAccess.filter((a) => a.document_id !== documentId));
+    setSelectedDocumentId(null);
+    flash(setMsg, "Document deleted");
+  }
+
+  const selectedDocument = documents.find((d) => d.id === selectedDocumentId) || null;
+  const students = users.filter((u) => u.role !== "admin");
+
   return (
     <div>
       {msg && <div className="success">{msg}</div>}
@@ -223,6 +299,7 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
         <button className={tab === "bunny" ? "active" : ""} onClick={() => { setTab("bunny"); if (!bunnyVideos) loadBunnyVideos(); }}>
           Bunny Library
         </button>
+        <button className={tab === "documents" ? "active" : ""} onClick={() => setTab("documents")}>Documents</button>
         <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>
         <button className={tab === "assign" ? "active" : ""} onClick={() => setTab("assign")}>Assign access</button>
       </div>
@@ -317,6 +394,43 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {tab === "documents" && (
+        <div>
+          <div className="card" style={{ maxWidth: 480 }}>
+            <h3>Upload a document</h3>
+            <p style={{ color: "#999", fontSize: 13, marginTop: -6 }}>
+              Students can only view it in-browser — no download link is ever shown to them.
+            </p>
+            <form onSubmit={uploadDocument}>
+              <input name="title" placeholder="Document title" required />
+              <label style={{ fontSize: 13, color: "#aaa" }}>PDF file</label>
+              <input name="document_file" type="file" accept="application/pdf" required />
+              <button type="submit" disabled={uploadingDocument}>
+                {uploadingDocument ? "Uploading..." : "Upload document"}
+              </button>
+            </form>
+          </div>
+
+          <h3 style={{ marginTop: 32 }}>Your documents</h3>
+          <p style={{ color: "#999", fontSize: 13 }}>Click a document to choose which students can view it.</p>
+          {documents.length === 0 ? (
+            <p style={{ color: "#888", fontSize: 13 }}>No documents uploaded yet.</p>
+          ) : (
+            <table>
+              <thead><tr><th>Title</th><th>Students with access</th></tr></thead>
+              <tbody>
+                {documents.map((d) => (
+                  <tr key={d.id} className="clickable-row" onClick={() => setSelectedDocumentId(d.id)}>
+                    <td>{d.title}</td>
+                    <td>{documentAccess.filter((a) => a.document_id === d.id).length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -434,6 +548,17 @@ export default function AdminPanel({ initialUsers, initialCourses, initialEnroll
           onRemoveCourse={removeUserCourse}
           onDelete={deleteUser}
           onRevokeDevice={revokeDevice}
+        />
+      )}
+
+      {selectedDocument && (
+        <DocumentAccessModal
+          document={selectedDocument}
+          students={students}
+          access={documentAccess}
+          onClose={() => setSelectedDocumentId(null)}
+          onToggleAccess={toggleDocumentAccess}
+          onDelete={deleteDocument}
         />
       )}
     </div>
