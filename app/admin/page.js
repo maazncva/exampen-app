@@ -33,14 +33,18 @@ export default async function AdminPage() {
     { data: enrollments },
     { data: lessons },
     { data: deviceSessions },
-    { data: authList }
+    { data: authList },
+    { data: documents },
+    { data: documentAccess }
   ] = await Promise.all([
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
     supabase.from("courses").select("*").order("created_at", { ascending: false }),
     supabase.from("enrollments").select("*"),
     supabase.from("lessons").select("*").order("position", { ascending: true }),
     supabase.from("device_sessions").select("*").order("last_seen_at", { ascending: false }),
-    adminClient.auth.admin.listUsers({ perPage: 1000 })
+    adminClient.auth.admin.listUsers({ perPage: 1000 }),
+    supabase.from("documents").select("*").order("created_at", { ascending: false }),
+    supabase.from("document_access").select("*")
   ]);
 
   // Merge in each user's active/banned status (lives on the auth user, not the profile row).
@@ -66,6 +70,8 @@ export default async function AdminPage() {
           initialEnrollments={enrollments || []}
           initialLessons={lessons || []}
           initialDeviceSessions={deviceSessions || []}
+          initialDocuments={documents || []}
+          initialDocumentAccess={documentAccess || []}
         />
       </div>
     </div>
