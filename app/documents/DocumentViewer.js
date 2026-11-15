@@ -3,7 +3,32 @@ import { useEffect, useRef, useState } from "react";
 
 const PDFJS_VERSION = "3.11.174";
 
-export default function DocumentViewer({ documentId, watermarkText }) {
+// Fetches the PDF bytes for either a standalone document (stored in Supabase,
+// streamed through our own route) or a course PDF (stored in Bunny Storage --
+// the server checks enrollment, hands back a short-lived signed link, and we
+// download it from Bunny directly).
+async function loadPdfBytes({ documentId, coursePdfId }) {
+  if (coursePdfId) {
+    const tokenRes = await fetch("/api/course-pdf-url", {
+      method: "POST",
+      body: JSON.stringify({ pdfId: coursePdfId })
+    });
+    const json = await tokenRes.json().catch(() => ({}));
+    if (!tokenRes.ok || !json.url) throw new Error(json.error || "Failed to load document");
+    const fileRes = await fetch(json.url, { cache: "no-store" });
+    if (!fileRes.ok) throw new Error("Failed to download document from storage");
+    return fileRes.arrayBuffer();
+  }
+
+  const res = await fetch(`/api/documents/${documentId}/file`);
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || "Failed to load document");
+  }
+  return res.arrayBuffer();
+}
+
+export default function DocumentViewer({ documentId, coursePdfId, watermarkText }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -17,12 +42,7 @@ export default function DocumentViewer({ documentId, watermarkText }) {
         pdfjsLib.GlobalWorkerOptions.workerSrc =
           `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
 
-        const res = await fetch(`/api/documents/${documentId}/file`);
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Failed to load document");
-        }
-        const arrayBuffer = await res.arrayBuffer();
+        const arrayBuffer = await loadPdfBytes({ documentId, coursePdfId });
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         if (cancelled) return;
 
@@ -74,7 +94,7 @@ export default function DocumentViewer({ documentId, watermarkText }) {
     return () => {
       cancelled = true;
     };
-  }, [documentId, watermarkText]);
+  }, [documentId, coursePdfId, watermarkText]);
 
   return (
     <div onContextMenu={(e) => e.preventDefault()} style={{ userSelect: "none" }}>

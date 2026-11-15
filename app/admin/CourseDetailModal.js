@@ -4,6 +4,8 @@ import { useState } from "react";
 export default function CourseDetailModal({
   course,
   lessons,
+  pdfs = [],
+  onRemovePdf,
   bunnyVideos,
   bunnyLoading,
   onLoadBunnyVideos,
@@ -25,6 +27,11 @@ export default function CourseDetailModal({
     await onRemoveLesson(lesson.id);
   }
 
+  async function handleRemovePdf(pdf) {
+    if (!confirm(`Remove "${pdf.title}" from this course? Students enrolled here will lose access to it. The file stays in Bunny Storage.`)) return;
+    await onRemovePdf(pdf.id);
+  }
+
   async function handleDeleteCourse() {
     if (!confirm(`Permanently delete "${course.title}"? This removes all its lessons and every student's access to it. This can't be undone.`)) return;
     setBusy(true);
@@ -42,7 +49,7 @@ export default function CourseDetailModal({
         <div className="modal-header">
           <div>
             <h2 style={{ margin: 0 }}>{course.title}</h2>
-            <p style={{ color: "#999", fontSize: 13, margin: "4px 0 0" }}>{lessons.length} lesson(s)</p>
+            <p style={{ color: "#999", fontSize: 13, margin: "4px 0 0" }}>{lessons.length} lesson(s) · {pdfs.length} PDF(s)</p>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
@@ -75,6 +82,28 @@ export default function CourseDetailModal({
                         Remove
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <h3 style={{ marginTop: 28 }}>PDFs</h3>
+            {pdfs.length === 0 ? (
+              <p style={{ color: "#888", fontSize: 13 }}>
+                No PDFs yet — attach them from the Bunny PDFs tab.
+              </p>
+            ) : (
+              <div>
+                {pdfs.map((p) => (
+                  <div
+                    key={p.id}
+                    className="card"
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8, padding: "10px 14px" }}
+                  >
+                    <span>📄 {p.title}</span>
+                    <button className="btn-danger" style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleRemovePdf(p)}>
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>

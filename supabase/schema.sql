@@ -116,3 +116,25 @@ create policy "admin delete thumbnails" on storage.objects
     bucket_id = 'thumbnails'
     and exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
   );
+
+-- ---------------------------------------------------------------------------
+-- COURSE PDFs (stored in Bunny Storage). Also available on its own in
+-- supabase/migrations/2026-11-course-pdfs.sql if you already ran this file.
+-- ---------------------------------------------------------------------------
+create table if not exists public.course_pdfs (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid not null references public.courses(id) on delete cascade,
+  storage_path text not null,   -- path of the file inside the Bunny storage zone, e.g. "biology/chapter-1.pdf"
+  title text not null,
+  position int not null default 0,
+  created_at timestamptz default now(),
+  unique (course_id, storage_path)
+);
+
+alter table public.course_pdfs enable row level security;
+
+-- Everyone logged in can see PDF titles/order (NOT the file -- that's only
+-- ever issued by the server after checking enrollment, same as videos).
+drop policy if exists "read course pdfs" on public.course_pdfs;
+create policy "read course pdfs" on public.course_pdfs
+  for select using (auth.role() = 'authenticated');
