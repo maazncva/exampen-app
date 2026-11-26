@@ -30,11 +30,13 @@ export default async function CoursePage({ params }) {
     );
   }
 
-  const { data: lessons } = await supabase
-    .from("lessons")
-    .select("*")
-    .eq("course_id", params.id)
-    .order("position", { ascending: true });
+  const [{ data: lessons }, { data: pdfs }] = await Promise.all([
+    supabase.from("lessons").select("*").eq("course_id", params.id).order("position", { ascending: true }),
+    supabase.from("course_pdfs").select("id, title").eq("course_id", params.id).order("position", { ascending: true })
+  ]);
+
+  const hasLessons = lessons && lessons.length > 0;
+  const hasPdfs = pdfs && pdfs.length > 0;
 
   return (
     <div className="container">
@@ -42,10 +44,28 @@ export default async function CoursePage({ params }) {
       <h1>{course.title}</h1>
       <p style={{ color: "#999" }}>{course.description}</p>
 
-      {(!lessons || lessons.length === 0) ? (
-        <p style={{ color: "#888" }}>No lessons published yet — check back soon.</p>
-      ) : (
-        <LessonPlayer lessons={lessons} />
+      {!hasLessons && !hasPdfs && (
+        <p style={{ color: "#888" }}>Nothing published yet — check back soon.</p>
+      )}
+
+      {hasLessons && <LessonPlayer lessons={lessons} />}
+
+      {hasPdfs && (
+        <div style={{ marginTop: hasLessons ? 36 : 20 }}>
+          <h3>PDFs</h3>
+          <div className="grid">
+            {pdfs.map((p) => (
+              <a key={p.id} href={`/course/${course.id}/pdf/${p.id}`} style={{ textDecoration: "none" }}>
+                <div className="course-card">
+                  <div style={{ padding: 20 }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
+                    <h3 style={{ margin: 0 }}>{p.title}</h3>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

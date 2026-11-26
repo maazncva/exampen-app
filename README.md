@@ -64,7 +64,36 @@ Stack: Next.js + Supabase (auth + database) + Bunny Stream (video). Hosted on Ve
 - **Create a student login**: Admin panel → Users tab → set them a temporary password (tell them to note it — there's no "forgot password" flow yet, that's a fast follow-up if you want it).
 - **Give/remove access**: Admin panel → Assign access tab → click Grant/Enrolled per user per course — this unlocks *all* lessons in that course at once.
 
+## Course PDFs (Bunny Storage)
+
+PDFs work exactly like video lessons: attach them to a course, and every student enrolled in that course can open them. Bunny Stream only takes video, so PDFs live in a **Bunny Storage zone**.
+
+**One-time setup**
+1. Supabase → **SQL Editor** → paste and run `supabase/migrations/2026-11-course-pdfs.sql`.
+2. Bunny dashboard → **Storage → Add Storage Zone** (e.g. `exampen-pdfs`). Pick the main region closest to your students.
+3. Open the zone → **FTP & API Access** → note the **Password** and **Hostname**.
+4. On the storage zone, **connect a Pull Zone** (Bunny offers this on the zone page). Note its hostname, e.g. `exampen-pdfs.b-cdn.net`.
+5. That Pull Zone → **Security → Token Authentication** → turn it ON and copy the key.
+6. Same Pull Zone → **Headers → CORS** → make sure "Add CORS headers" is on and add `pdf` to the extension list (the viewer downloads the file from Bunny in the browser, which needs this).
+7. In Vercel → **Settings → Environment Variables**, add these, then redeploy:
+
+| Variable | Value |
+|---|---|
+| `BUNNY_STORAGE_ZONE` | storage zone name, e.g. `exampen-pdfs` |
+| `BUNNY_STORAGE_PASSWORD` | storage zone → FTP & API Access → Password |
+| `BUNNY_STORAGE_HOST` | storage zone → FTP & API Access → Hostname (e.g. `storage.bunnycdn.com`, `uk.storage.bunnycdn.com`) |
+| `BUNNY_PDF_PULL_ZONE` | connected pull zone hostname, e.g. `exampen-pdfs.b-cdn.net` (no `https://`) |
+| `BUNNY_PDF_TOKEN_KEY` | pull zone → Security → Token Authentication key |
+
+**Everyday use**
+1. Upload PDFs in Bunny → Storage → your PDF zone (folders are fine, e.g. one folder per course).
+2. Admin panel → **Bunny PDFs** tab → each PDF shows up with a button per course → click a course to attach it (click again to remove).
+3. Students enrolled in that course see a **PDFs** section on the course page and read them in the watermarked viewer.
+
+The older **Documents** tab (PDFs stored in Supabase, shared per student) still works as before.
+
 ## Security notes
+- Course PDFs: the server checks the `enrollments` table, then issues a Bunny link signed with the token key that expires in 10 minutes. The storage zone password and token key never reach the browser.
 - The video URL is generated with a 2-hour expiring signed token, produced server-side, only after checking the `enrollments` table — so even a technical user inspecting the page can't get a working link to a course they're not enrolled in, and any link they do see expires quickly.
 - The `service_role` Supabase key must only ever live in Vercel's environment variables, never in the browser bundle — this project is already structured so it's only used inside `/api/admin/*` server routes.
 

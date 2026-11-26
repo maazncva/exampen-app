@@ -24,7 +24,7 @@ export default async function AdminPage() {
 
   const adminClient = createAdminClient();
 
-  // None of these six depend on each other, so run them all at once instead
+  // None of these queries depend on each other, so run them all at once instead
   // of one after another -- this is the single biggest speed win available
   // on this page.
   const [
@@ -35,7 +35,8 @@ export default async function AdminPage() {
     { data: deviceSessions },
     { data: authList },
     { data: documents },
-    { data: documentAccess }
+    { data: documentAccess },
+    { data: coursePdfs }
   ] = await Promise.all([
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
     supabase.from("courses").select("*").order("created_at", { ascending: false }),
@@ -44,7 +45,8 @@ export default async function AdminPage() {
     supabase.from("device_sessions").select("*").order("last_seen_at", { ascending: false }),
     adminClient.auth.admin.listUsers({ perPage: 1000 }),
     supabase.from("documents").select("*").order("created_at", { ascending: false }),
-    supabase.from("document_access").select("*")
+    supabase.from("document_access").select("*"),
+    supabase.from("course_pdfs").select("*").order("position", { ascending: true })
   ]);
 
   // Merge in each user's active/banned status (lives on the auth user, not the profile row).
@@ -72,6 +74,7 @@ export default async function AdminPage() {
           initialDeviceSessions={deviceSessions || []}
           initialDocuments={documents || []}
           initialDocumentAccess={documentAccess || []}
+          initialCoursePdfs={coursePdfs || []}
         />
       </div>
     </div>

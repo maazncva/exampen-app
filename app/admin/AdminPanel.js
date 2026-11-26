@@ -12,7 +12,8 @@ export default function AdminPanel({
   initialLessons,
   initialDeviceSessions,
   initialDocuments,
-  initialDocumentAccess
+  initialDocumentAccess,
+  initialCoursePdfs
 }) {
   const [tab, setTab] = useState("courses");
   const [users, setUsers] = useState(initialUsers);
@@ -24,6 +25,9 @@ export default function AdminPanel({
   const [documentAccess, setDocumentAccess] = useState(initialDocumentAccess || []);
   const [bunnyVideos, setBunnyVideos] = useState(null); // null = not loaded yet
   const [bunnyLoading, setBunnyLoading] = useState(false);
+  const [coursePdfs, setCoursePdfs] = useState(initialCoursePdfs || []);
+  const [bunnyPdfs, setBunnyPdfs] = useState(null); // null = not loaded yet
+  const [bunnyPdfsLoading, setBunnyPdfsLoading] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [thumbPreview, setThumbPreview] = useState(null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
@@ -40,6 +44,10 @@ export default function AdminPanel({
 
   function lessonsFor(courseId) {
     return lessons.filter((l) => l.course_id === courseId);
+  }
+
+  function pdfsFor(courseId) {
+    return coursePdfs.filter((p) => p.course_id === courseId);
   }
 
   // ---- Create user (with course access chosen up front) ----
@@ -212,6 +220,7 @@ export default function AdminPanel({
     if (!res.ok) return flash(setErr, json.error || "Failed to delete course");
     setCourses(courses.filter((c) => c.id !== courseId));
     setLessons(lessons.filter((l) => l.course_id !== courseId));
+    setCoursePdfs(coursePdfs.filter((p) => p.course_id !== courseId));
     setEnrollments(enrollments.filter((e) => e.course_id !== courseId));
     setSelectedCourseId(null);
     flash(setMsg, "Course deleted");
@@ -224,6 +233,43 @@ export default function AdminPanel({
     const json = await res.json();
     if (!res.ok) return flash(setErr, json.error || "Failed to remove lesson");
     setLessons(lessons.filter((l) => l.id !== lessonId));
+  }
+
+  // ---- Bunny Storage PDFs ----
+  async function loadBunnyPdfs() {
+    setBunnyPdfsLoading(true);
+    setErr("");
+    const res = await fetch("/api/admin/bunny-pdfs");
+    const json = await res.json();
+    setBunnyPdfsLoading(false);
+    if (!res.ok) return flash(setErr, json.error || "Failed to load Bunny Storage — check your Bunny Storage env vars");
+    setBunnyPdfs(json.pdfs);
+  }
+
+  async function attachPdf(file, courseId) {
+    if (!courseId) return;
+    const res = await fetch("/api/admin/add-course-pdf", {
+      method: "POST",
+      body: JSON.stringify({ courseId, storagePath: file.path, title: file.title })
+    });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to attach PDF");
+    setCoursePdfs([...coursePdfs, json.pdf]);
+    flash(setMsg, `"${file.title}" attached to course`);
+  }
+
+  async function removeCoursePdf(pdfId) {
+    const res = await fetch("/api/admin/remove-course-pdf", { method: "POST", body: JSON.stringify({ pdfId }) });
+    const json = await res.json();
+    if (!res.ok) return flash(setErr, json.error || "Failed to remove PDF");
+    setCoursePdfs(coursePdfs.filter((p) => p.id !== pdfId));
+  }
+
+  async function detachPdf(file, courseId, courseTitle) {
+    const pdf = coursePdfs.find((p) => p.course_id === courseId && p.storage_path === file.path);
+    if (!pdf) return;
+    if (!confirm(`Remove "${file.title}" from "${courseTitle}"?`)) return;
+    await removeCoursePdf(pdf.id);
   }
 
   // ---- Documents ----
@@ -299,6 +345,9 @@ export default function AdminPanel({
         <button className={tab === "bunny" ? "active" : ""} onClick={() => { setTab("bunny"); if (!bunnyVideos) loadBunnyVideos(); }}>
           Bunny Library
         </button>
+        <button className={tab === "bunnyPdfs" ? "active" : ""} onClick={() => { setTab("bunnyPdfs"); if (!bunnyPdfs) loadBunnyPdfs(); }}>
+          Bunny PDFs
+        </button>
         <button className={tab === "documents" ? "active" : ""} onClick={() => setTab("documents")}>Documents</button>
         <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>
         <button className={tab === "assign" ? "active" : ""} onClick={() => setTab("assign")}>Assign access</button>
@@ -338,7 +387,7 @@ export default function AdminPanel({
                   )}
                 </div>
                 <div className="course-title">{c.title}</div>
-                <div className="tag">{lessonsFor(c.id).length} lesson(s)</div>
+                <div className="tag">{lessonsFor(c.id).length} lesson(s) · {pdfsFor(c.id).length} PDF(s)</div>
               </div>
             ))}
           </div>
@@ -383,6 +432,62 @@ export default function AdminPanel({
                             style={{ fontSize: 12, padding: "6px 10px" }}
                             disabled={v.status !== 4}
                             onClick={() => (attached ? detachVideo(v, c.id, c.title) : attachVideo(v, c.id))}
+                          >
+                            {attached ? "✓ " : ""}{c.title}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "bunnyPdfs" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3>PDFs in your Bunny Storage zone</h3>
+            <button onClick={loadBunnyPdfs} disabled={bunnyPdfsLoading}>
+              {bunnyPdfsLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          <p style={{ color: "#999", fontSize: 13 }}>
+            Upload PDFs in your Bunny dashboard (Storage → your PDF zone) — they'll show up here automatically, including
+            ones inside folders. Click a course below a PDF to add or remove it there. Students enrolled in that course
+            get every PDF in it, just like video lessons.
+          </p>
+
+          {bunnyPdfs === null && !bunnyPdfsLoading && <p>Loading...</p>}
+          {bunnyPdfs && bunnyPdfs.length === 0 && (
+            <p style={{ color: "#888" }}>No PDFs found yet — upload some to your Bunny storage zone first.</p>
+          )}
+
+          <div className="grid">
+            {(bunnyPdfs || []).map((f) => (
+              <div key={f.path} className="course-card">
+                <div style={{ padding: "16px 14px 8px" }}>
+                  <div style={{ fontSize: 28 }}>📄</div>
+                  <div className="course-title" style={{ padding: "8px 0 0" }}>{f.title}</div>
+                  <div style={{ color: "#888", fontSize: 12 }}>
+                    {f.folder ? `${f.folder} · ` : ""}{(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB
+                  </div>
+                </div>
+                <div style={{ padding: "0 14px 14px" }}>
+                  {courses.length === 0 ? (
+                    <p style={{ color: "#888", fontSize: 12 }}>Create a course first.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {courses.map((c) => {
+                        const attached = coursePdfs.some((p) => p.course_id === c.id && p.storage_path === f.path);
+                        return (
+                          <button
+                            key={c.id}
+                            className={attached ? "" : "btn-secondary"}
+                            style={{ fontSize: 12, padding: "6px 10px" }}
+                            onClick={() => (attached ? detachPdf(f, c.id, c.title) : attachPdf(f, c.id))}
                           >
                             {attached ? "✓ " : ""}{c.title}
                           </button>
@@ -526,6 +631,8 @@ export default function AdminPanel({
         <CourseDetailModal
           course={selectedCourse}
           lessons={lessonsFor(selectedCourse.id)}
+          pdfs={pdfsFor(selectedCourse.id)}
+          onRemovePdf={removeCoursePdf}
           bunnyVideos={bunnyVideos}
           bunnyLoading={bunnyLoading}
           onLoadBunnyVideos={loadBunnyVideos}
